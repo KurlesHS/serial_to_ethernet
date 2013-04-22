@@ -2,7 +2,7 @@ __author__ = 'alexey'
 port = 8000
 device = '/dev/ttyUSB0'
 
-import sys
+import os
 from twisted.internet import reactor
 from twisted.internet.protocol import Factory
 from twisted.internet.protocol import Protocol
@@ -11,6 +11,8 @@ from twisted.internet.task import LoopingCall
 from twisted.application import service
 from twisted.application import internet
 from twisted.python import log
+from twisted.python.log import ILogObserver, FileLogObserver
+from twisted.python.logfile import DailyLogFile
 
 client_list = []
 usb_list = []
@@ -43,9 +45,6 @@ class USBClient(Protocol):
         if self.lc.running:
             self.lc.stop()
         self.lc.start(0.2, False)
-        for cli in client_list:
-            cli.transport.write(data)
-
 
     def sendLine(self, cmd):
         print cmd
@@ -86,10 +85,16 @@ class SerialService(service.Service):
     def startService(self):
         SerialPort(self.factory, self.device, reactor)
 
+logPath = "/var/log/serialtoethernetd/"
+if not os.path.exists(logPath):
+    os.mkdir(logPath)
+
+logFile = DailyLogFile("messages.log", logPath, defaultMode=0644)
 multiService = service.MultiService()
 tcpfactory = CommandRxFactory()
 tcpService = internet.TCPServer(port, tcpfactory).setServiceParent(multiService)
 serialService = SerialService(USBClient(tcpfactory), device).setServiceParent(multiService)
 application = service.Application("serial port to ethernet")
+application.setComponent(ILogObserver, FileLogObserver(logFile).emit)
 multiService.setServiceParent(application)
 #SerialPort(USBClient(tcpfactory), device, reactor)
