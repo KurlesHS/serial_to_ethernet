@@ -8,6 +8,8 @@ from twisted.internet.protocol import Factory
 from twisted.internet.protocol import Protocol
 from twisted.internet.serialport import SerialPort
 from twisted.internet.task import LoopingCall
+from twisted.application import service
+from twisted.application import internet
 from twisted.python import log
 
 client_list = []
@@ -33,10 +35,10 @@ class USBClient(Protocol):
 
     def connectionMade(self):
         usb_list.append(self)
-        log.msg("Connected to %d device" % device)
-        USBClient.sendLine(self, 'AT\r\n')
+        log.msg("Connected to %s device" % device)
 
     def dataReceived(self, data):
+        #log.msg("data resrvr")
         self.serialBuffer += data
         if self.lc.running:
             self.lc.stop()
@@ -76,8 +78,18 @@ class CommandRxFactory(Factory):
         log.msg("connection received from %s" % addr)
         return CommandRx()
 
+class SerialService(service.Service):
+    def __init__(self, factory, device):
+        self.factory = factory
+        self.device = device
 
+    def startService(self):
+        SerialPort(self.factory, self.device, reactor)
+
+multiService = service.MultiService()
 tcpfactory = CommandRxFactory()
-reactor.listenTCP(port, tcpfactory)
-SerialPort(USBClient(tcpfactory), device, reactor)
-reactor.run()
+tcpService = internet.TCPServer(port, tcpfactory).setServiceParent(multiService)
+serialService = SerialService(USBClient(tcpfactory), device).setServiceParent(multiService)
+application = service.Application("serial port to ethernet")
+multiService.setServiceParent(application)
+#SerialPort(USBClient(tcpfactory), device, reactor)
